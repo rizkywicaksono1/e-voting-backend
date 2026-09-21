@@ -265,17 +265,24 @@ app.get('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
 // Add New DPT Voter (Admin Only)
 app.post('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { nik, name } = req.body;
-        if (!nik || !name || nik.trim() ){
-            return res.status(400).json({ success: false, message: 'NIK wajib diisi' });
+        // Mendukung request body dengan key 'name' maupun 'nama'
+        const { nik, name, nama } = req.body;
+        const voterName = name || nama;
+
+        // ✅ PERBAIKAN: Gunakan !nik.trim() dan !voterName.trim()
+        if (!nik || !voterName || !nik.trim() || !voterName.trim()) {
+            return res.status(400).json({ success: false, message: 'NIK dan Nama wajib diisi!' });
         }
 
-        const existing = await dbGet(`SELECT nik FROM voters WHERE nik = ?`, [nik.trim()]);
+        const cleanNik = nik.trim();
+        const cleanName = voterName.trim();
+
+        const existing = await dbGet(`SELECT nik FROM voters WHERE nik = ?`, [cleanNik]);
         if (existing) {
             return res.status(400).json({ success: false, message: 'NIK ini sudah terdaftar dalam DPT' });
         }
 
-        await dbRun(`INSERT INTO voters (nik, name, has_voted) VALUES (?, ?, 0)`, [nik.trim(), name.trim()]);
+        await dbRun(`INSERT INTO voters (nik, name, has_voted) VALUES (?, ?, 0)`, [cleanNik, cleanName]);
         return res.status(201).json({ success: true, message: 'DPT baru berhasil ditambahkan' });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Gagal menambah DPT', error: error.message });
