@@ -98,29 +98,29 @@ async function initDatabase() {
         }
 
         // Seed Kandidat Awal jika tabel kosong
-        const candCount = await dbGet(`SELECT COUNT(*) as count FROM candidates`);
-        if (candCount.count === 0) {
-            await dbRun(`
-                INSERT INTO candidates (id, name, photo, visi, misi, votes) VALUES 
-                (1, '01. Alex & Sarah', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80', 'Mewujudkan organisasi yang transparan, inovatif, dan berdaya saing digital.', '1. Optimalisasi sistem pelayanan digital\\n2. Program transparansi anggaran terbuka\\n3. Wadah kreativitas generasi muda', 1),
-                (2, '02. Budi & Citadel', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80', 'Kepemimpinan solid, inklusif, dan berlandaskan asas kekeluargaan.', '1. Penguatan partisipasi aktif anggota\\n2. Pelatihan kepemimpinan berkelanjutan\\n3. Efisiensi tata kelola internal', 0),
-                (3, '03. Citra & Dimas', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80', 'Mendorong keberlanjutan, aksi nyata, dan kolaborasi lintas sektor.', '1. Program ramah lingkungan & hijau\\n2. Kolaborasi strategis mitra luar\\n3. Respons cepat aspirasi anggota', 0)
-            `);
-            console.log('👥 Data kandidat awal berhasil di-seed.');
-        }
+       // const candCount = await dbGet(`SELECT COUNT(*) as count FROM candidates`);
+       // if (candCount.count === 0) {
+           // await dbRun(`
+              //  INSERT INTO candidates (id, name, photo, visi, misi, votes) VALUES 
+              //  (1, '01. Alex & Sarah', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80', 'Mewujudkan organisasi yang transparan, inovatif, dan berdaya saing digital.', '1. Optimalisasi sistem pelayanan digital\\n2. Program transparansi anggaran terbuka\\n3. Wadah kreativitas generasi muda', 1),
+              //  (2, '02. Budi & Citadel', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80', 'Kepemimpinan solid, inklusif, dan berlandaskan asas kekeluargaan.', '1. Penguatan partisipasi aktif anggota\\n2. Pelatihan kepemimpinan berkelanjutan\\n3. Efisiensi tata kelola internal', 0),
+                //(3, '03. Citra & Dimas', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80', 'Mendorong keberlanjutan, aksi nyata, dan kolaborasi lintas sektor.', '1. Program ramah lingkungan & hijau\\n2. Kolaborasi strategis mitra luar\\n3. Respons cepat aspirasi anggota', 0)
+           // `);
+           // console.log('👥 Data kandidat awal berhasil di-seed.');
+      //  }
 
         // Seed DPT Awal jika kosong
-        const voterCount = await dbGet(`SELECT COUNT(*) as count FROM voters`);
-        if (voterCount.count === 0) {
-            await dbRun(`
-                INSERT INTO voters (nik, name, has_voted, voted_candidate_id, voted_at) VALUES 
-                ('3201234567890001', 'Budi Santoso', 0, NULL, NULL),
-                ('3201234567890002', 'Siti Rahmawati', 1, 1, NOW()),
-                ('3201234567890003', 'Andi Wijaya', 0, NULL, NULL),
-                ('3201234567890004', 'Dewi Lestari', 0, NULL, NULL)
-            `);
-            console.log('📋 Data DPT awal berhasil di-seed.');
-        }
+       // const voterCount = await dbGet(`SELECT COUNT(*) as count FROM voters`);
+      //  if (voterCount.count === 0) {
+         //   await dbRun(`
+           //     INSERT INTO voters (nik, name, has_voted, voted_candidate_id, voted_at) VALUES 
+           //     ('3201234567890001', 'Budi Santoso', 0, NULL, NULL),
+            //    ('3201234567890002', 'Siti Rahmawati', 1, 1, NOW()),
+            //    ('3201234567890003', 'Andi Wijaya', 0, NULL, NULL),
+             //   ('3201234567890004', 'Dewi Lestari', 0, NULL, NULL)
+           // `);
+           // console.log('📋 Data DPT awal berhasil di-seed.');
+       // }
     } catch (error) {
         console.error('❌ Gagal inisialisasi database MySQL:', error.message);
     }
