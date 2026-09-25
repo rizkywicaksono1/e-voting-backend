@@ -188,6 +188,29 @@ app.post('/api/auth/voter-login', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Terjadi kesalahan server', error: error.message });
     }
 });
+// Hapus Pemilih DPT (Admin Only)
+app.delete('/api/voters/:nik', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const nik = req.params.nik;
+        const voter = await dbGet(`SELECT * FROM voters WHERE nik = ?`, [nik]);
+
+        if (!voter) {
+            return res.status(404).json({ success: false, message: 'Pemilih tidak ditemukan' });
+        }
+
+        // Jika pemilih sudah memberikan suara, kurangi suara kandidat terlebih dahulu secara otomatis
+        if (voter.has_voted && voter.voted_candidate_id) {
+            await dbRun(`UPDATE candidates SET votes = GREATEST(0, votes - 1) WHERE id = ?`, [voter.voted_candidate_id]);
+        }
+
+        // Hapus pemilih dari tabel
+        await dbRun(`DELETE FROM voters WHERE nik = ?`, [nik]);
+
+        return res.json({ success: true, message: `Pemilih dengan NIK ${nik} berhasil dihapus` });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Gagal menghapus pemilih', error: error.message });
+    }
+});
 
 // 2. Admin Login
 app.post('/api/auth/admin-login', async (req, res) => {
