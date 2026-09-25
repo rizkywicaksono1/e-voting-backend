@@ -2,112 +2,127 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const mysql = require('mysql2/promise');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'evote_super_secret_jwt_key_2026';
-const DB_PATH = path.join(__dirname, 'evoting.db');
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Support base64 image upload
+app.use(express.json({ limit: '10mb' })); // Dukung upload foto base64
 
-const db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) {
-        console.error('Error opening database:', err.message);
-    } else {
-        console.log('Connected to SQLite database at:', DB_PATH);
-        initDatabase();
-    }
+// Konfigurasi MySQL Connection Pool
+const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'evoting_db',
+    port: process.env.DB_PORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-// SQLite Helper Functions for Async/Await
-const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
-});
+// Helper Functions untuk mempermudah query
+const dbGet = async (sql, params = []) => {
+    const [rows] = await pool.query(sql, params);
+    return rows[0] || null;
+};
 
-const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
-});
+const dbAll = async (sql, params = []) => {
+    const [rows] = await pool.query(sql, params);
+    return rows;
+};
 
-const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) { err ? reject(err) : resolve(this); });
-});
+const dbRun = async (sql, params = []) => {
+    const [result] = await pool.query(sql, params);
+    return result;
+};
 
+// Inisialisasi & Seeding Data Awal
 async function initDatabase() {
     try {
-        // Create Table: Admins
+        const connection = await pool.getConnection();
+        console.log('✅ Berhasil terhubung ke database MySQL!');
+        connection.release();
+
+        // 1. Buat Tabel Admins
         await dbRun(`
             CREATE TABLE IF NOT EXISTS admins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(100) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB;
         `);
 
-        // Create Table: Voters (DPT)
-        await dbRun(`
-            CREATE TABLE IF NOT EXISTS voters (
-                nik TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                has_voted INTEGER DEFAULT 0,
-                voted_candidate_id INTEGER DEFAULT NULL,
-                voted_at DATETIME DEFAULT NULL
-            )
-        `);
-
-        // Create Table: Candidates
+        // 2. Buat Tabel Kandidat
         await dbRun(`
             CREATE TABLE IF NOT EXISTS candidates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
                 photo TEXT NOT NULL,
                 visi TEXT NOT NULL,
                 misi TEXT NOT NULL,
-                votes INTEGER DEFAULT 0
-            )
+                votes INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB;
         `);
 
-        // Seed Admin Account if empty
+        // 3. Buat Tabel Pemilih (Voters / DPT)
+        await dbRun(`
+            CREATE TABLE IF NOT EXISTS voters (
+                nik VARCHAR(50) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                has_voted TINYINT(1) NOT NULL DEFAULT 0,
+                voted_candidate_id INT DEFAULT NULL,
+                voted_at DATETIME DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_voter_candidate FOREIGN KEY (voted_candidate_id) 
+                    REFERENCES candidates(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB;
+        `);
+
+        // Seed Akun Admin Default (admin / admin123) jika belum ada
         const adminCount = await dbGet(`SELECT COUNT(*) as count FROM admins`);
         if (adminCount.count === 0) {
             const hashedPass = await bcrypt.hash('admin123', 10);
             await dbRun(`INSERT INTO admins (username, password_hash) VALUES (?, ?)`, ['admin', hashedPass]);
-            console.log('Default Admin created -> Username: admin | Password: admin123');
+            console.log('🔑 Akun Admin Default Dibuat -> Username: admin | Password: admin123');
         }
 
-        // Seed Initial Candidates if empty
+        // Seed Kandidat Awal jika tabel kosong
         const candCount = await dbGet(`SELECT COUNT(*) as count FROM candidates`);
         if (candCount.count === 0) {
             await dbRun(`
                 INSERT INTO candidates (id, name, photo, visi, misi, votes) VALUES 
-                (1, '01. Alex & Sarah', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80', 'Mewujudkan organisasi yang transparan, inovatif, dan berdaya saing digital.', '1. Optimalisasi sistem pelayanan digital\n2. Program transparansi anggaran terbuka\n3. Wadah kreativitas generasi muda', 1),
-                (2, '02. Budi & Citadel', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80', 'Kepemimpinan solid, inklusif, dan berlandaskan asas kekeluargaan.', '1. Penguatan partisipasi aktif anggota\n2. Pelatihan kepemimpinan berkelanjutan\n3. Efisiensi tata kelola internal', 0),
-                (3, '03. Citra & Dimas', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80', 'Mendorong keberlanjutan, aksi nyata, dan kolaborasi lintas sektor.', '1. Program ramah lingkungan & hijau\n2. Kolaborasi strategis mitra luar\n3. Respons cepat aspirasi anggota', 0)
+                (1, '01. Alex & Sarah', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80', 'Mewujudkan organisasi yang transparan, inovatif, dan berdaya saing digital.', '1. Optimalisasi sistem pelayanan digital\\n2. Program transparansi anggaran terbuka\\n3. Wadah kreativitas generasi muda', 1),
+                (2, '02. Budi & Citadel', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80', 'Kepemimpinan solid, inklusif, dan berlandaskan asas kekeluargaan.', '1. Penguatan partisipasi aktif anggota\\n2. Pelatihan kepemimpinan berkelanjutan\\n3. Efisiensi tata kelola internal', 0),
+                (3, '03. Citra & Dimas', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80', 'Mendorong keberlanjutan, aksi nyata, dan kolaborasi lintas sektor.', '1. Program ramah lingkungan & hijau\\n2. Kolaborasi strategis mitra luar\\n3. Respons cepat aspirasi anggota', 0)
             `);
-            console.log('Default candidates seeded.');
+            console.log('👥 Data kandidat awal berhasil di-seed.');
         }
 
-        // Seed Initial Voters if empty
+        // Seed DPT Awal jika kosong
         const voterCount = await dbGet(`SELECT COUNT(*) as count FROM voters`);
         if (voterCount.count === 0) {
             await dbRun(`
                 INSERT INTO voters (nik, name, has_voted, voted_candidate_id, voted_at) VALUES 
                 ('3201234567890001', 'Budi Santoso', 0, NULL, NULL),
-                ('3201234567890002', 'Siti Rahmawati', 1, 1, CURRENT_TIMESTAMP),
+                ('3201234567890002', 'Siti Rahmawati', 1, 1, NOW()),
                 ('3201234567890003', 'Andi Wijaya', 0, NULL, NULL),
                 ('3201234567890004', 'Dewi Lestari', 0, NULL, NULL)
             `);
-            console.log('Default DPT voters seeded.');
+            console.log('📋 Data DPT awal berhasil di-seed.');
         }
-
     } catch (error) {
-        console.error('Database initialization error:', error);
+        console.error('❌ Gagal inisialisasi database MySQL:', error.message);
     }
 }
 
+// Middleware Autentikasi JWT
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -133,8 +148,9 @@ const requireAdmin = (req, res, next) => {
     }
 };
 
+// ================= API ROUTES =================
 
-// Voter Login via NIK
+// 1. Voter Login via NIK
 app.post('/api/auth/voter-login', async (req, res) => {
     try {
         const { nik } = req.body;
@@ -169,7 +185,7 @@ app.post('/api/auth/voter-login', async (req, res) => {
     }
 });
 
-// Admin Login via Username & Password
+// 2. Admin Login
 app.post('/api/auth/admin-login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -204,8 +220,7 @@ app.post('/api/auth/admin-login', async (req, res) => {
     }
 });
 
-
-// Get All Candidates
+// 3. Ambil Semua Kandidat
 app.get('/api/candidates', async (req, res) => {
     try {
         const candidates = await dbAll(`SELECT * FROM candidates ORDER BY id ASC`);
@@ -215,7 +230,7 @@ app.get('/api/candidates', async (req, res) => {
     }
 });
 
-// Add Candidate (Admin Only)
+// 4. Tambah Kandidat (Admin Only)
 app.post('/api/candidates', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { name, photo, visi, misi } = req.body;
@@ -233,14 +248,14 @@ app.post('/api/candidates', authenticateToken, requireAdmin, async (req, res) =>
         return res.status(201).json({
             success: true,
             message: 'Kandidat berhasil ditambahkan',
-            candidateId: result.lastID
+            candidateId: result.insertId
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Gagal menambah kandidat', error: error.message });
     }
 });
 
-// Delete Candidate (Admin Only)
+// 5. Hapus Kandidat (Admin Only)
 app.delete('/api/candidates/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const candidateId = req.params.id;
@@ -251,8 +266,7 @@ app.delete('/api/candidates/:id', authenticateToken, requireAdmin, async (req, r
     }
 });
 
-
-// Get All DPT Voters (Admin Only)
+// 6. Ambil Data DPT (Admin Only)
 app.get('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const voters = await dbAll(`SELECT nik, name, has_voted, voted_candidate_id, voted_at FROM voters ORDER BY name ASC`);
@@ -262,14 +276,12 @@ app.get('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Add New DPT Voter (Admin Only)
+// 7. Tambah Pemilih DPT Baru (Admin Only)
 app.post('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        // Mendukung request body dengan key 'name' maupun 'nama'
         const { nik, name, nama } = req.body;
         const voterName = name || nama;
 
-        // ✅ PERBAIKAN: Gunakan !nik.trim() dan !voterName.trim()
         if (!nik || !voterName || !nik.trim() || !voterName.trim()) {
             return res.status(400).json({ success: false, message: 'NIK dan Nama wajib diisi!' });
         }
@@ -289,7 +301,7 @@ app.post('/api/voters', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Reset Single Voter's Vote (Admin Only)
+// 8. Reset Hak Suara Pemilih Tunggal (Admin Only)
 app.post('/api/voters/reset/:nik', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const nik = req.params.nik;
@@ -300,11 +312,9 @@ app.post('/api/voters/reset/:nik', authenticateToken, requireAdmin, async (req, 
         }
 
         if (voter.has_voted && voter.voted_candidate_id) {
-            // Decrement vote count for the candidate
-            await dbRun(`UPDATE candidates SET votes = MAX(0, votes - 1) WHERE id = ?`, [voter.voted_candidate_id]);
+            await dbRun(`UPDATE candidates SET votes = GREATEST(0, votes - 1) WHERE id = ?`, [voter.voted_candidate_id]);
         }
 
-        // Reset voter state
         await dbRun(`UPDATE voters SET has_voted = 0, voted_candidate_id = NULL, voted_at = NULL WHERE nik = ?`, [nik]);
 
         return res.json({ success: true, message: `Status suara pemilih NIK ${nik} berhasil di-reset` });
@@ -313,8 +323,7 @@ app.post('/api/voters/reset/:nik', authenticateToken, requireAdmin, async (req, 
     }
 });
 
-
-// Submit Vote (Voter Only - Double Vote Protection)
+// 9. Submit Voting (Vote Sekali Pakai)
 app.post('/api/vote', authenticateToken, async (req, res) => {
     try {
         const voterNik = req.user.nik;
@@ -324,7 +333,6 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'ID Kandidat wajib disertakan' });
         }
 
-        // Atomic Transaction Simulation: Check current vote status
         const voter = await dbGet(`SELECT * FROM voters WHERE nik = ?`, [voterNik]);
         if (!voter) {
             return res.status(404).json({ success: false, message: 'Pemilih tidak terdaftar' });
@@ -339,10 +347,10 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Kandidat tidak ditemukan' });
         }
 
-        // Execute Vote Entry
+        // Simpan suara ke kandidat dan update status pemilih
         await dbRun(`UPDATE candidates SET votes = votes + 1 WHERE id = ?`, [candidateId]);
         await dbRun(
-            `UPDATE voters SET has_voted = 1, voted_candidate_id = ?, voted_at = CURRENT_TIMESTAMP WHERE nik = ?`,
+            `UPDATE voters SET has_voted = 1, voted_candidate_id = ?, voted_at = NOW() WHERE nik = ?`,
             [candidateId, voterNik]
         );
 
@@ -355,8 +363,7 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
     }
 });
 
-
-// Get Election Statistics
+// 10. Statistik Hasil Pemilihan Realtime
 app.get('/api/stats', async (req, res) => {
     try {
         const totalVoters = await dbGet(`SELECT COUNT(*) as count FROM voters`);
@@ -383,7 +390,7 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-// Total Reset All Votes (Admin Only)
+// 11. Reset Total Semua Suara (Admin Only)
 app.post('/api/admin/reset-all', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await dbRun(`UPDATE candidates SET votes = 0`);
@@ -395,7 +402,7 @@ app.post('/api/admin/reset-all', authenticateToken, requireAdmin, async (req, re
     }
 });
 
-// Change Admin Password (Admin Only)
+// 12. Ganti Password Admin
 app.post('/api/admin/change-password', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
@@ -419,11 +426,10 @@ app.post('/api/admin/change-password', authenticateToken, requireAdmin, async (r
     }
 });
 
-
-// Start Server
-app.listen(PORT, () => {
+// Jalankan Server & Inisialisasi Database
+app.listen(PORT, async () => {
     console.log(`================================================`);
-    console.log(` E-VOTING BACKEND API SERVER RUNNING AT:`);
-    console.log(` http://localhost:${PORT}`);
+    console.log(` E-VOTING BACKEND RUNNING AT: http://localhost:${PORT}`);
     console.log(`================================================`);
+    await initDatabase();
 });
